@@ -60,7 +60,6 @@ private:
     unsigned int cX;
     unsigned int cY;
 
-
 public:
     Atom(){
         mass=0.1;
