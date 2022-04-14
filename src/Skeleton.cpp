@@ -55,12 +55,14 @@ Vertex* allAtomVertices;
 class Atom{
 private:
     Atom* parent;
+    Molecule* molecule;
     double mass;
     double charge;
     double cX;
     double cY;
-    double vX=0;
-    double vY=0;
+    vec2 velocity;
+    double torque;
+
 
 public:
     Atom(){
@@ -69,13 +71,13 @@ public:
         cX=-1;
         cY=-1;
         parent= nullptr;
+        molecule= nullptr;
     }
-    Atom(Atom* parent){
+    Atom(Atom* parent, Molecule* molecule){
         mass=rand()%300+1;
         charge=(rand()%200-100);
         this->parent=parent;
-
-
+        this->molecule=molecule;
 
         do{
             cX=-1.0f + (double)rand()/ RAND_MAX * (1.f - -1.f);
@@ -140,10 +142,12 @@ public:
 
     }
 
-    void increaseVelX(double val){vX+=val;}
-    double getVelX(){return vX;}
-    void increaseVelY(double val){vY+=val;}
-    double getVelY(){return vY;}
+    void setVelocity(const vec2& val){val;}
+    vec2& getVelocity(){return velocity;}
+
+    void setTorque(double val){torque=val;}
+    double getTorque(){return torque;}
+    Molecule& getMolecule(){return *molecule;}
 
 };
 class Molecule{
@@ -158,11 +162,11 @@ public:
     Molecule(){
         count=rand() % 7 +2;
         atoms=new Atom[count];
-        atoms[0]=Atom(nullptr);
+        atoms[0]=Atom(nullptr,this);
         double charge=atoms[0].getCharge();
         for(int i=1;i<count;i++){
             int parentIndex=rand()%i;
-            atoms[i] = Atom(&atoms[parentIndex]);
+            atoms[i] = Atom(&atoms[parentIndex],this);
             charge+=atoms[i].getCharge();
         }
         atoms[count-1].setCharge(-charge);
@@ -196,6 +200,10 @@ public:
         cmX/=mass;
         cmY/=mass;
     }
+
+    vec2 getCenter(){return vec2(cmX, cmY);}
+
+
 
 
     ~Molecule(){
@@ -349,7 +357,7 @@ double calculateDistSq(double x1, double y1,double x2, double y2){
     return (x1-x2)*(x1-x2)+(y1-y2)*(y1-y2);
 }
 float calculateAngle(double x1, double y1, double x2, double y2){
-    return atan(fabs((y1-y2)/(x1-x2)))*180/M_PI;
+    return atanf(fabs((y1-y2)/(x1-x2)))*180/M_PI;
 }
 
 
@@ -364,55 +372,56 @@ void onIdle() {
                 allAtoms.push_back(molecules[m]->getAtoms()[i]);
             }
         }
-        double forcesX[allAtoms.size()];
-        double forcesY[allAtoms.size()];
-        printf("");
+        vec2 forces[allAtoms.size()];
+        double angularAcc[allAtoms.size()];
 
         for (double t = 0; t < 0.01; t += 0.0001) {
 
-            //Coulomb
             for (int i=0;i<allAtoms.size();i++){
-
-
                 for(int j=0;j<allAtoms.size();j++){
                     if(j==i)
                         continue;
-                    //calculate force between the two atoms
-                    double force = allAtoms[i].getCharge() * allAtoms[j].getCharge()*pow(10,-10)*1.60217663 * 8.988 /
-                            (calculateDistSq(allAtoms[i].getX(), allAtoms[i].getY(), allAtoms[j].getX(),
-                                                 allAtoms[j].getY()));
+                    //Calculate Coulomb force
+                    vec2 force=
+                            (allAtoms[i].getCharge() * allAtoms[j].getCharge()*100*1.60217663 * 8.988/
+                            (4*M_PI*8.85418782))
+                            *(normalize(vec2(allAtoms[i].getX(), allAtoms[i].getY())
+                            -vec2(allAtoms[j].getX(),allAtoms[j].getY()))
+                            /
+                            pow(length(vec2(allAtoms[i].getX(), allAtoms[i].getY())-vec2(allAtoms[j].getX(),allAtoms[j].getY())),2));
 
-                    //calculate the angle
-                    double a= calculateAngle(allAtoms[i].getX(), allAtoms[i].getY(), allAtoms[j].getX(),
-                                             allAtoms[j].getY());
-
-                    //calculate the x and y vectors of the force
-                    if(allAtoms[i].getX()<=allAtoms[j].getX())
-                        forcesX[i]=forcesX[i]+ cos(a)*force*(force>0 ? 1 :-1);
-                    else
-                        forcesX[i]=forcesX[i]+ cos(a)*force*(force>0 ? -1 :1);
-
-                    if(allAtoms[i].getY()<allAtoms[j].getY())
-                        forcesY[i]=forcesY[i]+ sin(a)*force*(force>0 ? 1 :-1);
-                    else
-                        forcesY[i]=forcesY[i]+ sin(a)*force*(force>0 ? -1 :1);
-
+                    //add force vector to net force acting on the atom
+                    forces[i]=forces[i]+force;
                 }
-                //apply drag
+                //Add drag force to net force
                 double mag=1; //magic variable
-                forcesX[i]-=0.47*mag*allAtoms[i].getVelX()*allAtoms[i].getVelX()/2;
-                forcesX[i]-=0.47*mag*allAtoms[i].getVelY()*allAtoms[i].getVelY()/2;
+                forces[i]=forces[i]-0.47*mag*allAtoms[i].getVelocity();
 
-                //change velocity
-                allAtoms[i].increaseVelX(forcesX[i]/allAtoms[i].getMass());
-                allAtoms[i].increaseVelY(forcesY[i]/allAtoms[i].getMass());
+                //change velocity by acceleration * delta t
+                allAtoms[i].setVelocity(allAtoms[i].getVelocity()+(forces[i]/(allAtoms[i].getMass()*1.6735575*pow(10,-27)))*0.0001);
+
+                //get the angle between the lever and force vector
+                vec2 lever=vec2(allAtoms[i].getMolecule().getCenter().x-allAtoms[i].getX(),allAtoms[i].getMolecule().getCenter().y-allAtoms[i].getY());
+                vec2 fVector=forces[i];
+                double angle=acosf(dot(lever,fVector)/(length(lever)*length(fVector)));
+                //calculate torque
+                allAtoms[i].setTorque(length(lever)*length(fVector)*sinf(angle));
+
+                //calculate angular acceleration
+                angularAcc[i]=allAtoms[i].getTorque()/((allAtoms[i].getMass()*1.6735575 *pow(10,-27))*pow(length(lever),2));
+                printf("");
+
 
             }
+
             //Move the atoms
             //TODO make it work... MVP?
             for(int i=0;i<allAtoms.size();i++){
+                /*
                 allAtoms[i].setX(allAtoms[i].getX()+allAtoms[i].getVelX());
                 allAtoms[i].setY(allAtoms[i].getY()+allAtoms[i].getVelY());
+
+                */
             }
 
         }
