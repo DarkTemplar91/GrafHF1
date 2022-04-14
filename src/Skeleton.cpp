@@ -62,6 +62,12 @@ private:
     double cY;
     vec2 velocity;
     double torque;
+    double angularVel;
+
+    float MVP[16]={1,0,0,0,
+                   0,1,0,0,
+                   0,0,1,0,
+                   0,0,0,1};;
 
 
 public:
@@ -120,6 +126,8 @@ public:
             vertices[i]=Vertex(vec2(circleVerticesX[i],circleVerticesY[i]),(charge<0 ? vec3(0,0,100/(-1*charge)): vec3(100/charge,0,0)));
         }
         glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * res, vertices, GL_STATIC_DRAW);
+        int mvpLocation=glGetUniformLocation(program, "MVP");
+        glUniformMatrix4fv(mvpLocation,1,GL_FALSE,this->MVP);
         glDrawArrays(GL_TRIANGLE_FAN, 0,res);
 
 
@@ -142,12 +150,21 @@ public:
 
     }
 
-    void setVelocity(const vec2& val){val;}
+    void setVelocity(const vec2& val){velocity=val;}
     vec2& getVelocity(){return velocity;}
 
     void setTorque(double val){torque=val;}
     double getTorque(){return torque;}
+    void setAngularVel(double val){angularVel=val;}
+    double getAngularVel(){return angularVel;}
+
     Molecule& getMolecule(){return *molecule;}
+
+    void addToMVP(float mvpAdd[16]){
+        for(int i=0;i<16;i++){
+            MVP[i]+=mvpAdd[i];
+        }
+    }
 
 };
 class Molecule{
@@ -364,73 +381,78 @@ float calculateAngle(double x1, double y1, double x2, double y2){
 void onIdle() {
 
 
-    if(molecules.size()>0) {
-        std::vector<Atom> allAtoms=std::vector<Atom>();
+    if (molecules.size() > 0) {
+        std::vector<Atom> allAtoms = std::vector<Atom>();
 
-        for(int m=0;m<molecules.size();m++){
-            for(int i=0;i<molecules[m]->getAtomNumber();i++){
+        for (int m = 0; m < molecules.size(); m++) {
+            for (int i = 0; i < molecules[m]->getAtomNumber(); i++) {
                 allAtoms.push_back(molecules[m]->getAtoms()[i]);
             }
         }
         vec2 forces[allAtoms.size()];
         double angularAcc[allAtoms.size()];
+        double deltaT = 0.0001;
+        for (double t = 0; t < 0.01; t += deltaT) {
 
-        for (double t = 0; t < 0.01; t += 0.0001) {
-
-            for (int i=0;i<allAtoms.size();i++){
-                for(int j=0;j<allAtoms.size();j++){
-                    if(j==i)
+            for (int i = 0; i < allAtoms.size(); i++) {
+                for (int j = 0; j < allAtoms.size(); j++) {
+                    if (j == i)
                         continue;
                     //Calculate Coulomb force
-                    vec2 force=
-                            (allAtoms[i].getCharge() * allAtoms[j].getCharge()*100*1.60217663 * 8.988/
-                            (4*M_PI*8.85418782))
-                            *(normalize(vec2(allAtoms[i].getX(), allAtoms[i].getY())
-                            -vec2(allAtoms[j].getX(),allAtoms[j].getY()))
-                            /
-                            pow(length(vec2(allAtoms[i].getX(), allAtoms[i].getY())-vec2(allAtoms[j].getX(),allAtoms[j].getY())),2));
+                    vec2 force =
+                            (allAtoms[i].getCharge() * allAtoms[j].getCharge() * 100 * 1.60217663 * 8.988 /
+                             (4 * M_PI * 8.85418782))
+                            * (normalize(vec2(allAtoms[i].getX(), allAtoms[i].getY())
+                                         - vec2(allAtoms[j].getX(), allAtoms[j].getY()))
+                               /
+                               pow(length(vec2(allAtoms[i].getX(), allAtoms[i].getY()) -
+                                          vec2(allAtoms[j].getX(), allAtoms[j].getY())), 2));
 
                     //add force vector to net force acting on the atom
-                    forces[i]=forces[i]+force;
+                    forces[i] = forces[i] + force;
                 }
                 //Add drag force to net force
-                double mag=1; //magic variable
-                forces[i]=forces[i]-0.47*mag*allAtoms[i].getVelocity();
+                double mag = 1; //magic variable
+                forces[i] = forces[i] - 0.47 * mag * allAtoms[i].getVelocity();
 
                 //change velocity by acceleration * delta t
-                allAtoms[i].setVelocity(allAtoms[i].getVelocity()+(forces[i]/(allAtoms[i].getMass()*1.6735575*pow(10,-27)))*0.0001);
+                allAtoms[i].setVelocity(allAtoms[i].getVelocity() +
+                                        (forces[i] / (allAtoms[i].getMass() * 1.6735575 * pow(10, -27))) * deltaT);
 
                 //get the angle between the lever and force vector
-                vec2 lever=vec2(allAtoms[i].getMolecule().getCenter().x-allAtoms[i].getX(),allAtoms[i].getMolecule().getCenter().y-allAtoms[i].getY());
-                vec2 fVector=forces[i];
-                double angle=acosf(dot(lever,fVector)/(length(lever)*length(fVector)));
+                vec2 lever = vec2(allAtoms[i].getMolecule().getCenter().x - allAtoms[i].getX(),
+                                  allAtoms[i].getMolecule().getCenter().y - allAtoms[i].getY());
+                vec2 fVector = forces[i];
+                double angle = acosf(dot(lever, fVector) / (length(lever) * length(fVector)));
                 //calculate torque
-                allAtoms[i].setTorque(length(lever)*length(fVector)*sinf(angle));
+                allAtoms[i].setTorque(length(lever) * length(fVector) * sinf(angle));
 
                 //calculate angular acceleration
-                angularAcc[i]=allAtoms[i].getTorque()/((allAtoms[i].getMass()*1.6735575 *pow(10,-27))*pow(length(lever),2));
-                printf("");
+                angularAcc[i] = allAtoms[i].getTorque() /
+                                ((allAtoms[i].getMass() * 1.6735575 * pow(10, -27)) * pow(length(lever), 2));
 
+                //assign angular velocity
+                allAtoms[i].setAngularVel(allAtoms[i].getAngularVel() + angularAcc[i] * deltaT);
 
+                //increment pos and angle
+                float x=(float)(allAtoms[i].getVelocity().x*deltaT);
+                float y=(float)(allAtoms[i].getVelocity().y*deltaT);
+                float posMatrix[]={0,0,0,x,
+                                   0,0,0,y,
+                                   0,0,0,0,
+                                   0,0,0,0};
+                allAtoms[i].addToMVP(posMatrix);
+                float cosA=cosf(angle);
+                float sinA=sinf(angle);
+                float rotMatrix[]={cosA, -sinA,0,0,
+                                   sinA,cosA,0,0,
+                                   0,0,0,0,
+                                   0,0,0,0};
+                allAtoms[i].addToMVP(rotMatrix);
             }
-
-            //Move the atoms
-            //TODO make it work... MVP?
-            for(int i=0;i<allAtoms.size();i++){
-                /*
-                allAtoms[i].setX(allAtoms[i].getX()+allAtoms[i].getVelX());
-                allAtoms[i].setY(allAtoms[i].getY()+allAtoms[i].getVelY());
-
-                */
-            }
-
         }
 
-
-
-
     }
-
 }
 
 
