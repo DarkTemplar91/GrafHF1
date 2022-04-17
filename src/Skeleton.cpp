@@ -67,39 +67,22 @@ class Molecule;
 class Atom;
 std::vector<Molecule*> molecules=std::vector<Molecule*>();
 
-unsigned int buffer;
-unsigned int vertexArray;
-unsigned int program;
 GPUProgram gpuProgram;
-struct Vertex{
-    vec2 pos;
-    vec3 col;
-    Vertex(){}
-    Vertex(vec2 p, vec3 c):pos(p),col(c){}
-
-};
-
-
 class Atom{
 private:
     unsigned int vao;
     unsigned int vbo;
     static const size_t resolution=20;
     vec2 vertices[resolution];
-
     Atom* parent;
     Molecule* molecule;
-
     double mass;
     double charge;
     const double r=0.05;
-
     vec2 pos;
     vec3 color;
-
     vec2 force;
 public:
-
     Atom& operator=(Atom other){
         this->pos=other.pos;
         this->color=other.color;
@@ -107,25 +90,18 @@ public:
         this->charge=other.charge;
         this->parent=other.parent;
         this->molecule=other.molecule;
-
-        this->vbo=other.vbo;
-        this->vao=other.vao;
         GLfloat doublePi=2*M_PI;
         for(int i=0;i<resolution;i++){
             vertices[i]=vec2(pos.x+r* cos(i*doublePi/resolution),pos.y+r*sin(i*doublePi/resolution));
         }
-
         glGenVertexArrays(1, &vao);
         glBindVertexArray(vao);
         glGenBuffers(1, &vbo);
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
-
         glBufferData(GL_ARRAY_BUFFER,
                      sizeof(vec2)*resolution,
                      vertices,
                      GL_STATIC_DRAW);
-
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0,
                               2, GL_FLOAT, GL_FALSE,
@@ -137,7 +113,7 @@ public:
         mass=rand()%300+1;
         charge=(rand()%200-100);
         if(charge==0)
-            charge=0.1;
+            charge=1;
         this->parent=parent;
         this->molecule=mo;
         color= charge >0 ? vec3(0.01*charge,0,0) : vec3(0,0,-0.01*charge);
@@ -146,32 +122,25 @@ public:
             pos.x=-1.0f + (double)rand()/ RAND_MAX * (1.f - -1.f);
             pos.y=-1.0f + (double)rand()/ RAND_MAX * (1.f - -1.f);
 
-        }while(!isInsideRadius(0.7f));
-
+        }while(!isInsideRadius(5));
         GLfloat doublePi=2*M_PI;
         for(int i=0;i<resolution;i++){
             vertices[i]=vec2(pos.x+r* cos(i*doublePi/resolution),pos.y+r*sin(i*doublePi/resolution));
         }
-
         glGenVertexArrays(1, &vao);
         glBindVertexArray(vao);
         glGenBuffers(1, &vbo);
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
-
         glBufferData(GL_ARRAY_BUFFER,
                      sizeof(vec2)*resolution,
                      vertices,
                      GL_STATIC_DRAW);
-
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0,
                               2, GL_FLOAT, GL_FALSE,
                               0, NULL);
-
-
     }
-    bool isInsideRadius(double radius){
+    bool isInsideRadius(double radius)const{
         if(parent==nullptr)
             return true;
         if((pos.x-parent->pos.x)*(pos.x-parent->pos.x)+(pos.y-parent->pos.y)*(pos.y-parent->pos.y)<=radius*radius)
@@ -179,13 +148,11 @@ public:
         return false;
 
     }
-    //Do not forget to add molecules position as well!
-    vec2 getPos(){return pos;}
+    vec2 getPos()const{return pos;}
     void setPos(vec2 p){pos=p;}
-    double getCharge(){return charge;}
-    double getMass(){return mass;}
+    double getCharge()const{return charge;}
+    double getMass()const{return mass;}
     void setCharge(double value){charge=value;}
-
     void draw()const{
         glBindVertexArray(vao);
         int location = glGetUniformLocation(gpuProgram.getId(), "color");
@@ -198,9 +165,8 @@ public:
 
 
     }
-
     void setForce(vec2 f){force=f;}
-    vec2 getForce(){return force;}
+    vec2 getForce()const{return force;}
 
 };
 class Edge{
@@ -208,9 +174,7 @@ class Edge{
     vec2 vertices[resolution];
     Atom* a1;
     Atom* a2;
-
     vec2 fromCenterOfMass=vec2(0,0);
-
     unsigned int vao;
     unsigned int vbo;
 public:
@@ -247,7 +211,7 @@ public:
                                   0, NULL);
         }
     }
-    void draw(){
+    void draw()const{
         glBindVertexArray(vao);
         int location = glGetUniformLocation(gpuProgram.getId(), "color");
         glUniform3f(location, 1,1,1);
@@ -268,6 +232,14 @@ private:
     vec2 deltaCoordinate=vec2(0,0);
     vec2 cameraShift=vec2(0,0);
 public:
+    Molecule(bool negative){
+        count=1;
+        atoms=new Atom[count];
+        atoms[0]=Atom(nullptr, nullptr);
+        atoms[0].setCharge(negative? -1:1);
+        atoms[0].setPos(vec2(negative? -0.5:0.5,0));
+        calculateCenterMass();
+    }
     Molecule(){
         count=rand() % 7 +2;
         atoms=new Atom[count];
@@ -282,13 +254,10 @@ public:
         }
         atoms[count-1].setCharge(-charge);
         calculateCenterMass();
-
-
-
     }
-    int getAtomNumber(){return count;}
-    Atom* getAtoms(){return atoms;}
-    void drawAtoms(){
+    int getAtomNumber()const{return count;}
+    Atom* getAtoms()const{return atoms;}
+    void drawAtoms()const{
 
         const mat4 mvp= RotationMatrix(phi, vec3(0,0,1))* TranslateMatrix(vec3(deltaCoordinate)+vec3(cameraShift));
 
@@ -297,7 +266,7 @@ public:
             atoms[i].draw();
         }
     }
-    void drawBonds(){
+    void drawBonds()const{
         const mat4 mvp= RotationMatrix(phi, vec3(0,0,1))* TranslateMatrix(vec3(deltaCoordinate)+vec3(cameraShift));
         glUniformMatrix4fv(0,1,GL_FALSE,static_cast<float*>(mvp));
         for(int i=0;i<count-1;i++){
@@ -321,31 +290,30 @@ public:
             edges[i].loadVertexData();
         }
     }
-    vec2 getCenter(){return pos;}
+    vec2 getCenter()const{return pos;}
     ~Molecule(){
         delete atoms;
         delete edges;
     }
     void setCameraShift(vec2 delta){cameraShift=delta;}
-    vec2 getCameraShift(){return cameraShift;}
+    vec2 getCameraShift()const{return cameraShift;}
 
     void setVelocity(vec2 v){this->vel=v;}
-    vec2 getVelocity(){return vel;}
-    double getMass(){return mass;}
+    vec2 getVelocity()const{return vel;}
+    double getMass()const{return mass;}
     void setMomentOfInertia(double i){this->moi=i;}
-    double getMomentOfInertia(){return moi;}
-
+    double getMomentOfInertia()const{return moi;}
     void setAngularVel(double v){angularVel=v;}
-    double getAngularVel(){return angularVel;}
-
+    double getAngularVel()const{return angularVel;}
     void setRotationAngle(double a){phi=a;}
-    double getRotationAngle(){return phi;}
+    double getRotationAngle()const{return phi;}
     void setDeltaCoordinates(vec2 d){deltaCoordinate=d;}
-    vec2 getDeltaCoordinates(){return deltaCoordinate;}
+    vec2 getDeltaCoordinates()const{return deltaCoordinate;}
 
 };
 void onInitialization() {
     glViewport(0, 0, windowWidth, windowHeight);
+    srand(time(0));
     gpuProgram.create(vertexShaderSource, fragmentShaderSource, "outColor");
 }
 
@@ -379,7 +347,6 @@ void onKeyboard(unsigned char key, int pX, int pY) {
     if(key==' '){
         molecules.push_back(new Molecule());
         molecules.push_back(new Molecule());
-
     }
     else if(key=='s' || key=='d' || key=='x' || key=='e'){
         for (const auto &item : molecules) {
@@ -397,8 +364,6 @@ void onKeyboard(unsigned char key, int pX, int pY) {
                     case 'e':
                         item->setCameraShift(item->getCameraShift() + vec2(0, 0.1));
                         break;
-
-
                 }
 
             }
@@ -419,59 +384,49 @@ void onIdle() {
     if(time-lastUpdate>10 && molecules.size()>0){
         double T=time-lastUpdate;
         lastUpdate=time;
-        double deltaT=0.0001;
+        double deltaT=0.01;
         for(double t=0;t<T;t+=deltaT*1000) {
             for (int i = 0; i < molecules.size(); i++) {
+                vec3 torque=vec3(0,0,0);
                 vec2 netForce=vec2(0,0);
-                vec3 torque=vec2(0,0);
                 double phi=0;
-                for (int j = 0; j < molecules[i]->getAtomNumber(); j++) {
-                    vec2 forces[molecules[i]->getAtomNumber()];
-                    for (int m = 0; m < molecules.size(); m++) {
-                        if (m == i)
-                            continue;
-                        for (int a = 0; a < molecules[m]->getAtomNumber(); a++) {
-                            //Calculate coulomb
+                for(int j=0;j<molecules[i]->getAtomNumber();j++){
+                    vec2 force=vec2(0,0);
 
-                            vec2 vector = molecules[i]->getAtoms()[j].getPos() - molecules[m]->getAtoms()[a].getPos();
-                            vec2 force =
+                    for(int m=0;m<molecules.size();m++){
+                        if(m==i) continue;
+                        for(int a=0;a<molecules[m]->getAtomNumber();a++){
+                            vec2 vector = (molecules[m]->getAtoms()[a].getPos()+molecules[m]->getCenter())-
+                                    (molecules[i]->getAtoms()[j].getPos()+molecules[i]->getCenter());
+                            vec2 coulomb =
                                     (molecules[i]->getAtoms()[j].getCharge() * molecules[m]->getAtoms()[a].getCharge() *
-                                     1.60217663e-26 * normalize(vector) /
+                                     1.60217663e-28 * normalize(vector) /
                                      (2 * M_PI * 8.85418782 * length(vector)));
-
-                            //add force vector to net force acting on the atom
-                            forces[i] = forces[i] + force;
-
+                            force = coulomb + force;
                         }
+                        vec2 lever=molecules[i]->getAtoms()[j].getPos();
+                        vec2 atomV=molecules[i]->getVelocity()+molecules[i]->getAngularVel()*lever;
+                        double mag=10e-26;
+                        force=force-(mag*atomV);
+                        netForce=netForce+force;
                     }
-                    double mag=10000;
-                    forces[i]=forces[i]-(mag*0.47*molecules[i]->getVelocity()/molecules[i]->getMass()*1.6735575e-27*10);
-                    molecules[i]->getAtoms()[j].setForce(forces[i]);
-                    netForce=netForce+forces[i];
-                    vec2 lever=molecules[i]->getCenter()-molecules[i]->getAtoms()[j].getPos();
+                    for(int a=0;a<molecules[i]->getAtomNumber();a++){
 
-                    torque=torque+cross(lever, forces[i]);
-                    phi+=molecules[i]->getAtoms()[j].getMass()*1.6735575e-27*length(lever)*length(lever);
+                        vec2 lever=molecules[i]->getAtoms()[j].getPos();
+                        torque=torque+cross(lever, force);
+                        phi+=molecules[i]->getAtoms()[j].getMass()*1.6735575e-27*length(lever)*length(lever);
+                    }
                 }
-                //Set velocity of molecule
-                molecules[i]->setVelocity(molecules[i]->getVelocity()+(netForce/(molecules[i]->getMass()* 1.6735575e-27)*deltaT));
-
-                //Set angular velocity
-                double angularAcc = torque.z /phi;
-
-                //assign angular velocity
-                molecules[i]->setAngularVel(molecules[i]->getAngularVel() + angularAcc * deltaT);
-
-                //new Positions
+                molecules[i]->setVelocity(molecules[i]->getVelocity()+netForce/(molecules[i]->getMass()* 1.6735575e-26)*deltaT);
                 molecules[i]->setDeltaCoordinates(molecules[i]->getDeltaCoordinates()+molecules[i]->getVelocity()*deltaT);
+                molecules[i]->setAngularVel(molecules[i]->getAngularVel()+torque.z/phi*deltaT);
                 molecules[i]->setRotationAngle(molecules[i]->getRotationAngle()+molecules[i]->getAngularVel()*deltaT);
-
                 for(int j=0;j<molecules[i]->getAtomNumber();j++){
                     vec4 newPos=vec4(molecules[i]->getAtoms()[j].getPos().x,molecules[i]->getAtoms()[j].getPos().y,0,1)*RotationMatrix(molecules[i]->getAngularVel()*deltaT,vec3(0,0,1));
                     molecules[i]->getAtoms()[j].setPos(vec2(newPos.x,newPos.y));
                 }
-
             }
+
         }
         glutPostRedisplay();
 
