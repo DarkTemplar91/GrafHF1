@@ -406,7 +406,7 @@ void onIdle() {
                         }
                         vec2 lever=molecules[i]->getAtoms()[j].getPos();
                         vec2 atomV=molecules[i]->getVelocity()+molecules[i]->getAngularVel()*lever;
-                        double mag=10e-26;
+                        double mag=10e-27;
                         force=force-(mag*atomV);
                         netForce=netForce+force;
                     }
@@ -417,7 +417,7 @@ void onIdle() {
                         phi+=molecules[i]->getAtoms()[j].getMass()*1.6735575e-27*length(lever)*length(lever);
                     }
                 }
-                molecules[i]->setVelocity(molecules[i]->getVelocity()+netForce/(molecules[i]->getMass()* 1.6735575e-26)*deltaT);
+                molecules[i]->setVelocity(molecules[i]->getVelocity()+netForce/(molecules[i]->getMass()* 1.6735575e-27)*deltaT);
                 molecules[i]->setDeltaCoordinates(molecules[i]->getDeltaCoordinates()+molecules[i]->getVelocity()*deltaT);
                 molecules[i]->setAngularVel(molecules[i]->getAngularVel()+torque.z/phi*deltaT);
                 molecules[i]->setRotationAngle(molecules[i]->getRotationAngle()+molecules[i]->getAngularVel()*deltaT);
