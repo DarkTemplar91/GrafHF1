@@ -44,7 +44,7 @@ const char *const vertexShaderSource=R"(#version 330
 
 void main(){
     vec4 mvPos=MVP*vec4(position,0,1);
-    vec4 trans=vec4(position,sqrt(mvPos.x*mvPos.x+mvPos.y*mvPos.y+1),1);
+    vec4 trans=vec4(mvPos.x,mvPos.y,sqrt(mvPos.x*mvPos.x+mvPos.y*mvPos.y+1),1);
     gl_Position=vec4(trans.x/(trans.z+1),trans.y/(trans.z+1),0,1);
 
 }
@@ -96,6 +96,8 @@ private:
 
     vec2 pos;
     vec3 color;
+
+    vec2 force;
 public:
 
     Atom& operator=(Atom other){
@@ -144,7 +146,7 @@ public:
             pos.x=-1.0f + (double)rand()/ RAND_MAX * (1.f - -1.f);
             pos.y=-1.0f + (double)rand()/ RAND_MAX * (1.f - -1.f);
 
-        }while(!isInsideRadius(0.5f));
+        }while(!isInsideRadius(0.7f));
 
         GLfloat doublePi=2*M_PI;
         for(int i=0;i<resolution;i++){
@@ -196,6 +198,9 @@ public:
 
 
     }
+
+    void setForce(vec2 f){force=f;}
+    vec2 getForce(){return force;}
 
 };
 class Edge{
@@ -254,14 +259,12 @@ private:
     unsigned int count;
     Atom* atoms;
     Edge* edges;
-
     vec2 pos=vec2();
     vec2 vel=vec2();
     double angularVel=0;
     double phi=0;
-    double sumTorque=0;
     double moi=0;
-
+    double mass=0;
     vec2 deltaCoordinate=vec2(0,0);
     vec2 cameraShift=vec2(0,0);
 public:
@@ -302,7 +305,7 @@ public:
         }
     }
     void calculateCenterMass() {
-        double mass = 0;
+        mass=0;
         for (int i = 0; i < count; i++) {
             mass += atoms[i].getMass();
             pos.x += atoms[i].getMass() * atoms[i].getPos().x;
@@ -318,31 +321,36 @@ public:
             edges[i].loadVertexData();
         }
     }
-
     vec2 getCenter(){return pos;}
     ~Molecule(){
         delete atoms;
+        delete edges;
     }
-
     void setCameraShift(vec2 delta){cameraShift=delta;}
     vec2 getCameraShift(){return cameraShift;}
 
+    void setVelocity(vec2 v){this->vel=v;}
+    vec2 getVelocity(){return vel;}
+    double getMass(){return mass;}
+    void setMomentOfInertia(double i){this->moi=i;}
+    double getMomentOfInertia(){return moi;}
+
+    void setAngularVel(double v){angularVel=v;}
+    double getAngularVel(){return angularVel;}
+
+    void setRotationAngle(double a){phi=a;}
+    double getRotationAngle(){return phi;}
+    void setDeltaCoordinates(vec2 d){deltaCoordinate=d;}
+    vec2 getDeltaCoordinates(){return deltaCoordinate;}
+
 };
-
-
-
-
 void onInitialization() {
     glViewport(0, 0, windowWidth, windowHeight);
-
     gpuProgram.create(vertexShaderSource, fragmentShaderSource, "outColor");
-
-
 }
 
 
 void onDisplay() {
-
     int error;
     while((error=glGetError())!=GL_NO_ERROR){
         printf("%d\n", error);
@@ -358,17 +366,13 @@ void onDisplay() {
 
     location = glGetUniformLocation(gpuProgram.getId(), "MVP");	// Get the GPU location of uniform variable MVP
     glUniformMatrix4fv(location, 1, GL_FALSE, MVPtransf);
-
     if(molecules.size()>0)
     {
-
         for (const auto &item : molecules){
-
             item->drawBonds();
             item->drawAtoms();
         }
     }
-
     glutSwapBuffers();
  }
 void onKeyboard(unsigned char key, int pX, int pY) {
@@ -404,108 +408,75 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 }
 void onKeyboardUp(unsigned char key, int pX, int pY) {
 }
-// Move mouse with key pressed
 void onMouseMotion(int pX, int pY) {
-
 }
 void onMouse(int button, int state, int pX, int pY) {
-    printf("\n%d, %d",pX,pY);
-}
-
-double calculateDistSq(double x1, double y1,double x2, double y2){
-    return (x1-x2)*(x1-x2)+(y1-y2)*(y1-y2);
 }
 long lastUpdate=0;
 void onIdle() {
 
     long time = glutGet(GLUT_ELAPSED_TIME);
     if(time-lastUpdate>10 && molecules.size()>0){
+        double T=time-lastUpdate;
         lastUpdate=time;
+        double deltaT=0.0001;
+        for(double t=0;t<T;t+=deltaT*1000) {
+            for (int i = 0; i < molecules.size(); i++) {
+                vec2 netForce=vec2(0,0);
+                vec3 torque=vec2(0,0);
+                double phi=0;
+                for (int j = 0; j < molecules[i]->getAtomNumber(); j++) {
+                    vec2 forces[molecules[i]->getAtomNumber()];
+                    for (int m = 0; m < molecules.size(); m++) {
+                        if (m == i)
+                            continue;
+                        for (int a = 0; a < molecules[m]->getAtomNumber(); a++) {
+                            //Calculate coulomb
 
-        for(int i=0;i<molecules.size();i++){
-            for(int j=0;j<molecules[i]->getAtomNumber();j++){
-                vec2 forces[molecules[i]->getAtomNumber()];
-                for(int m=0;m<molecules.size();m++){
-                    if(m==i)
-                        continue;
-                    for(int a=0;a<molecules[m]->getAtomNumber();a++){
-                        //Calculate coulomb
+                            vec2 vector = molecules[i]->getAtoms()[j].getPos() - molecules[m]->getAtoms()[a].getPos();
+                            vec2 force =
+                                    (molecules[i]->getAtoms()[j].getCharge() * molecules[m]->getAtoms()[a].getCharge() *
+                                     1.60217663e-26 * normalize(vector) /
+                                     (2 * M_PI * 8.85418782 * length(vector)));
 
-                        vec2 vector=molecules[i]->getAtoms()[j].getPos() -molecules[m]->getAtoms()[a].getPos();
-                    vec2 force =
-                            (molecules[i]->getAtoms()[j].getCharge() * molecules[m]->getAtoms()[a].getCharge() *1.60217663e-26 * normalize(vector)/
-                             (2 * M_PI * 8.85418782*length(vector)));
+                            //add force vector to net force acting on the atom
+                            forces[i] = forces[i] + force;
 
-                    //add force vector to net force acting on the atom
-                    forces[i] = forces[i] + force;
-
+                        }
                     }
+                    double mag=10000;
+                    forces[i]=forces[i]-(mag*0.47*molecules[i]->getVelocity()/molecules[i]->getMass()*1.6735575e-27*10);
+                    molecules[i]->getAtoms()[j].setForce(forces[i]);
+                    netForce=netForce+forces[i];
+                    vec2 lever=molecules[i]->getCenter()-molecules[i]->getAtoms()[j].getPos();
+
+                    torque=torque+cross(lever, forces[i]);
+                    phi+=molecules[i]->getAtoms()[j].getMass()*1.6735575e-27*length(lever)*length(lever);
+                }
+                //Set velocity of molecule
+                molecules[i]->setVelocity(molecules[i]->getVelocity()+(netForce/(molecules[i]->getMass()* 1.6735575e-27)*deltaT));
+
+                //Set angular velocity
+                double angularAcc = torque.z /phi;
+
+                //assign angular velocity
+                molecules[i]->setAngularVel(molecules[i]->getAngularVel() + angularAcc * deltaT);
+
+                //new Positions
+                molecules[i]->setDeltaCoordinates(molecules[i]->getDeltaCoordinates()+molecules[i]->getVelocity()*deltaT);
+                molecules[i]->setRotationAngle(molecules[i]->getRotationAngle()+molecules[i]->getAngularVel()*deltaT);
+
+                for(int j=0;j<molecules[i]->getAtomNumber();j++){
+                    vec4 newPos=vec4(molecules[i]->getAtoms()[j].getPos().x,molecules[i]->getAtoms()[j].getPos().y,0,1)*RotationMatrix(molecules[i]->getAngularVel()*deltaT,vec3(0,0,1));
+                    molecules[i]->getAtoms()[j].setPos(vec2(newPos.x,newPos.y));
                 }
 
             }
         }
+        glutPostRedisplay();
+
     }
-//
-//    if (molecules.size() > 0) {
-//        std::vector<Atom*> allAtoms = std::vector<Atom*>();
-//
-//        for (int m = 0; m < molecules.size(); m++) {
-//            for (int i = 0; i < molecules[m]->getAtomNumber(); i++) {
-//                allAtoms.push_back(&molecules[m]->getAtoms()[i]);
-//            }
-//        }
-//        vec2 forces[allAtoms.size()];
-//        double angularAcc[allAtoms.size()];
-//        double deltaT = 0.0001;
-//        for (double t = 0; t < 0.01; t += deltaT) {
-//
-//            for (int i = 0; i < allAtoms.size(); i++) {
-//                for (int j = 0; j < allAtoms.size(); j++) {
-//                    if (j == i)
-//                        continue;
-//
-//                    //Calculate Coulomb force
-//                    vec2 vector=vec2(allAtoms[i]->getX(), allAtoms[i]->getY())
-//                                - vec2(allAtoms[j]->getX(), allAtoms[j]->getY());
-//                    vec2 force =
-//                            (allAtoms[i]->getCharge() * allAtoms[j]->getCharge() *1.60217663e-26 * normalize(vector)/
-//                             (2 * M_PI * 8.85418782*length(vector)));
-//
-//                    //add force vector to net force acting on the atom
-//                    forces[i] = forces[i] + force;
-//                }
-//                //Add drag force to net force
-//                double mag = 1; //magic variable
-//                //forces[i] = forces[i] - 0.47 * mag * allAtoms[i]->getVelocity();
-//                //change velocity by acceleration * delta t
-//                vec2 preVelocity=allAtoms[i]->getVelocity();
-//                allAtoms[i]->setVelocity(allAtoms[i]->getVelocity() +
-//                                        (forces[i] / (allAtoms[i]->getMass() * 1.6735575e-27)) * deltaT);
-//                //get the angle between the lever and force vector
-//                vec2 lever = vec2(allAtoms[i]->getMolecule().getCenter().x - allAtoms[i]->getX(),
-//                                  allAtoms[i]->getMolecule().getCenter().y - allAtoms[i]->getY());
-//                vec2 fVector = forces[i];
-//                //calculate torque
-//                vec3 torque=cross(vec3(lever), vec3(fVector));
-//                //calculate angular acceleration
-//
-//                angularAcc[i] = torque.z /
-//                                ((allAtoms[i]->getMass() * 1.6735575e-27) * length(lever)*length(lever));
-//
-//                //assign angular velocity
-//                allAtoms[i]->setAngularVel(allAtoms[i]->getAngularVel() + angularAcc[i] * deltaT);
-//
-//
-//                //Set delta coordinates and angle
-//                allAtoms[i]->setDeltaC(allAtoms[i]->getDeltaC()+(allAtoms[i]->getVelocity()*deltaT));
-//                allAtoms[i]->setPhi(allAtoms[i]->getPhi()+allAtoms[i]->getAngularVel()*deltaT);
-//
-//
-//
-//            }
-//        }
-//        glutPostRedisplay();
-// }
+
 }
 
 
